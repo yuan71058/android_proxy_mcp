@@ -22,7 +22,34 @@ logger.add(
 
 
 def get_local_ip() -> str:
-    """获取本机局域网 IP"""
+    """获取本机局域网 IP（优先 Wi-Fi 接口，避免返回 VPN 地址）"""
+    # 优先尝试获取 Wi-Fi 接口 IP（macOS: en0, Linux: wlan0）
+    import platform
+    import subprocess
+
+    wifi_interfaces = ["en0", "en1"] if platform.system() == "Darwin" else ["wlan0", "wlan1"]
+    for iface in wifi_interfaces:
+        try:
+            result = subprocess.run(
+                ["ipconfig", "getifaddr", iface] if platform.system() == "Darwin"
+                else ["ip", "-4", "addr", "show", iface],
+                capture_output=True, text=True, timeout=3
+            )
+            ip = result.stdout.strip()
+            if ip and not ip.startswith("127."):
+                # Linux ip 命令需要额外解析
+                if platform.system() != "Darwin":
+                    for line in ip.splitlines():
+                        if "inet " in line:
+                            ip = line.strip().split()[1].split("/")[0]
+                            break
+                    else:
+                        continue
+                return ip
+        except Exception:
+            continue
+
+    # 回退：通过 UDP 连接获取（可能返回 VPN 地址）
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
